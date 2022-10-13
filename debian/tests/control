@@ -1,0 +1,27 @@
+Tests: c
+Depends:
+ build-essential,
+ cmake,
+ libcjson-dev,
+ libmsgpack-dev,
+
+Tests: cpp03
+# The stream example writes "connection closed" to stderr as part of the normal
+# EOF processing
+Restrictions: allow-stderr
+Depends:
+ build-essential,
+ cmake,
+ libmsgpack-dev,
+
+Tests: cpp11
+Depends:
+ build-essential,
+ cmake,
+ libmsgpack-dev,
+
+Tests: x3
+Depends:
+ build-essential,
+ cmake,
+ libmsgpack-dev,

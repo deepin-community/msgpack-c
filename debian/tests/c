@@ -1,0 +1,3 @@
+#!/bin/sh
+
+./debian/tests/run_examples -l c

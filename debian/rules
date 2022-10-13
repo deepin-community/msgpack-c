@@ -1,0 +1,56 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS=hardening=+all
+include /usr/share/dpkg/architecture.mk
+include /usr/share/dpkg/buildflags.mk
+
+export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
+
+%:
+	dh $@ --buildsystem=cmake+ninja --builddirectory=build
+
+# If we're running tests, then setup the build for both C++11/C++17 so we can run the entire test suite
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+override_dh_auto_configure:
+	mkdir -p build-gtest
+	cd build-gtest && \
+	  cmake -Wno-dev -DCMAKE_INSTALL_PREFIX=$(CURDIR)/build-gtest/install -DBUILD_GMOCK=OFF -DBUILD_GTEST=ON /usr/src/googletest && \
+	  make install
+	env GTEST_ROOT=$(CURDIR)/build-gtest/install dh_auto_configure -- -DMSGPACK_CXX11=ON -DMSGPACK_ENABLE_SHARED=ON -DMSGPACK_ENABLE_CXX=ON -DCMAKE_INSTALL_LIBDIR=/usr/lib/$(DEB_HOST_MULTIARCH)
+	env GTEST_ROOT=$(CURDIR)/build-gtest/install dh_auto_configure --builddirectory=build17 -- -DMSGPACK_CXX17=ON -DMSGPACK_ENABLE_SHARED=ON -DMSGPACK_ENABLE_CXX=ON -DCMAKE_INSTALL_LIBDIR=/usr/lib/$(DEB_HOST_MULTIARCH)
+
+override_dh_auto_build-arch:
+	dh_auto_build
+	dh_auto_build --builddirectory=build17
+
+override_dh_auto_test-arch:
+	dh_auto_test
+	dh_auto_test --builddirectory=build17
+
+else
+# Otherwise, we don't need to specify anything about the C++ standard, since it's a header-only library, nor do we need to build gtest
+override_dh_auto_configure:
+	dh_auto_configure -- -DMSGPACK_ENABLE_SHARED=ON -DMSGPACK_ENABLE_CXX=ON -DCMAKE_INSTALL_LIBDIR=/usr/lib/$(DEB_HOST_MULTIARCH)
+
+endif
+
+ifeq (,$(filter nodoc,$(DEB_BUILD_OPTIONS)))
+override_dh_auto_build-indep:
+	dh_auto_build -- doxygen
+
+override_dh_install-indep:
+	dh_install -i
+
+override_dh_installdocs-indep:
+	mkdir -p build/html
+	mv build/doc_c/html build/html/msgpack-c
+	mv build/doc_cpp/html build/html/msgpack-cpp
+	dh_installdocs
+	dh_doxygen
+
+override_dh_link-indep:
+	dh_link -i
+	jdupes -rl debian/libmsgpack-doc/usr/
+
+override_dh_auto_test-indep:
+endif

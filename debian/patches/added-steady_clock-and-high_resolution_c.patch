@@ -1,0 +1,797 @@
+From: Takatoshi Kondo <redboltz@gmail.com>
+Date: Fri, 12 Jun 2020 22:09:19 +0900
+X-Dgit-Generated: 3.3.0-2 a0cdfb39faac97544251bdc0da6d6574099e8130
+Subject: Added steady_clock and high_resolution_clock support.
+
+
+---
+
+--- msgpack-c-3.3.0.orig/include/msgpack/v1/adaptor/cpp11/chrono.hpp
++++ msgpack-c-3.3.0/include/msgpack/v1/adaptor/cpp11/chrono.hpp
+@@ -204,6 +204,398 @@ struct object_with_zone<std::chrono::sys
+     }
+ };
+ 
++
++template <>
++struct as<std::chrono::steady_clock::time_point> {
++    typename std::chrono::steady_clock::time_point operator()(msgpack::object const& o) const {
++        if(o.type != msgpack::type::EXT) { throw msgpack::type_error(); }
++        if(o.via.ext.type() != -1) { throw msgpack::type_error(); }
++        std::chrono::steady_clock::time_point tp;
++        switch(o.via.ext.size) {
++        case 4: {
++            uint32_t sec;
++            _msgpack_load32(uint32_t, o.via.ext.data(), &sec);
++            tp += std::chrono::seconds(sec);
++        } break;
++        case 8: {
++            uint64_t value;
++            _msgpack_load64(uint64_t, o.via.ext.data(), &value);
++            uint32_t nanosec = static_cast<uint32_t>(value >> 34);
++            uint64_t sec = value & 0x00000003ffffffffLL;
++            tp += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
++                std::chrono::nanoseconds(nanosec));
++            tp += std::chrono::seconds(sec);
++        } break;
++        case 12: {
++            uint32_t nanosec;
++            _msgpack_load32(uint32_t, o.via.ext.data(), &nanosec);
++            int64_t sec;
++            _msgpack_load64(int64_t, o.via.ext.data() + 4, &sec);
++            tp += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
++                std::chrono::nanoseconds(nanosec));
++            tp += std::chrono::seconds(sec);
++        } break;
++        default:
++            throw msgpack::type_error();
++        }
++        return tp;
++    }
++};
++
++template <>
++struct convert<std::chrono::steady_clock::time_point> {
++    msgpack::object const& operator()(msgpack::object const& o, std::chrono::steady_clock::time_point& v) const {
++        if(o.type != msgpack::type::EXT) { throw msgpack::type_error(); }
++        if(o.via.ext.type() != -1) { throw msgpack::type_error(); }
++        std::chrono::steady_clock::time_point tp;
++        switch(o.via.ext.size) {
++        case 4: {
++            uint32_t sec;
++            _msgpack_load32(uint32_t, o.via.ext.data(), &sec);
++            tp += std::chrono::seconds(sec);
++            v = tp;
++        } break;
++        case 8: {
++            uint64_t value;
++            _msgpack_load64(uint64_t, o.via.ext.data(), &value);
++            uint32_t nanosec = static_cast<uint32_t>(value >> 34);
++            uint64_t sec = value & 0x00000003ffffffffLL;
++            tp += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
++                std::chrono::nanoseconds(nanosec));
++            tp += std::chrono::seconds(sec);
++            v = tp;
++        } break;
++        case 12: {
++            uint32_t nanosec;
++            _msgpack_load32(uint32_t, o.via.ext.data(), &nanosec);
++            int64_t sec;
++            _msgpack_load64(int64_t, o.via.ext.data() + 4, &sec);
++            tp += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
++                std::chrono::nanoseconds(nanosec));
++            tp += std::chrono::seconds(sec);
++            v = tp;
++        } break;
++        default:
++            throw msgpack::type_error();
++        }
++        return o;
++    }
++};
++
++template <>
++struct pack<std::chrono::steady_clock::time_point> {
++    template <typename Stream>
++    msgpack::packer<Stream>& operator()(msgpack::packer<Stream>& o, const std::chrono::steady_clock::time_point& v) const {
++        int64_t count = static_cast<int64_t>(v.time_since_epoch().count());
++
++        int64_t nano_num =
++            std::chrono::steady_clock::duration::period::ratio::num *
++            (1000000000 / std::chrono::steady_clock::duration::period::ratio::den);
++
++        int64_t nanosec = count % (1000000000 / nano_num) * nano_num;
++        int64_t sec = 0;
++        if (nanosec < 0) {
++            nanosec = 1000000000 + nanosec;
++            --sec;
++        }
++        sec += count
++            * std::chrono::steady_clock::duration::period::ratio::num
++            / std::chrono::steady_clock::duration::period::ratio::den;
++        if ((sec >> 34) == 0) {
++            uint64_t data64 = (static_cast<uint64_t>(nanosec) << 34) | static_cast<uint64_t>(sec);
++            if ((data64 & 0xffffffff00000000L) == 0) {
++                // timestamp 32
++                o.pack_ext(4, -1);
++                uint32_t data32 = static_cast<uint32_t>(data64);
++                char buf[4];
++                _msgpack_store32(buf, data32);
++                o.pack_ext_body(buf, 4);
++            }
++            else {
++                // timestamp 64
++                o.pack_ext(8, -1);
++                char buf[8];
++                _msgpack_store64(buf, data64);
++                o.pack_ext_body(buf, 8);
++            }
++        }
++        else {
++            // timestamp 96
++            o.pack_ext(12, -1);
++            char buf[12];
++            _msgpack_store32(&buf[0], static_cast<uint32_t>(nanosec));
++            _msgpack_store64(&buf[4], sec);
++            o.pack_ext_body(buf, 12);
++        }
++        return o;
++    }
++};
++
++template <>
++struct object_with_zone<std::chrono::steady_clock::time_point> {
++    void operator()(msgpack::object::with_zone& o, const std::chrono::steady_clock::time_point& v) const {
++        int64_t count = static_cast<int64_t>(v.time_since_epoch().count());
++
++        int64_t nano_num =
++            std::chrono::steady_clock::duration::period::ratio::num *
++            (1000000000 / std::chrono::steady_clock::duration::period::ratio::den);
++
++        int64_t nanosec = count % (1000000000 / nano_num) * nano_num;
++        int64_t sec = 0;
++        if (nanosec < 0) {
++            nanosec = 1000000000 + nanosec;
++            --sec;
++        }
++        sec += count
++            * std::chrono::steady_clock::duration::period::ratio::num
++            / std::chrono::steady_clock::duration::period::ratio::den;
++        if ((sec >> 34) == 0) {
++            uint64_t data64 = (static_cast<uint64_t>(nanosec) << 34) | static_cast<uint64_t>(sec);
++            if ((data64 & 0xffffffff00000000L) == 0) {
++                // timestamp 32
++                o.type = msgpack::type::EXT;
++                o.via.ext.size = 4;
++                char* p = static_cast<char*>(o.zone.allocate_no_align(o.via.ext.size + 1));
++                p[0] = static_cast<char>(-1);
++                uint32_t data32 = static_cast<uint32_t>(data64);
++                _msgpack_store32(&p[1], data32);
++                o.via.ext.ptr = p;
++            }
++            else {
++                // timestamp 64
++                o.type = msgpack::type::EXT;
++                o.via.ext.size = 8;
++                char* p = static_cast<char*>(o.zone.allocate_no_align(o.via.ext.size + 1));
++                p[0] = static_cast<char>(-1);
++                _msgpack_store64(&p[1], data64);
++                o.via.ext.ptr = p;
++            }
++        }
++        else {
++            // timestamp 96
++            o.type = msgpack::type::EXT;
++            o.via.ext.size = 12;
++            char* p = static_cast<char*>(o.zone.allocate_no_align(o.via.ext.size + 1));
++            p[0] = static_cast<char>(-1);
++            _msgpack_store32(&p[1], static_cast<uint32_t>(nanosec));
++            _msgpack_store64(&p[1 + 4], sec);
++            o.via.ext.ptr = p;
++        }
++    }
++};
++
++
++template <>
++struct as<
++    std::chrono::high_resolution_clock::time_point,
++    typename std::conditional<
++        !std::is_same<std::chrono::high_resolution_clock, std::chrono::system_clock>::value &&
++        !std::is_same<std::chrono::high_resolution_clock, std::chrono::steady_clock>::value,
++        void,
++        std::nullptr_t
++    >::type
++> {
++    typename std::chrono::high_resolution_clock::time_point operator()(msgpack::object const& o) const {
++        if(o.type != msgpack::type::EXT) { throw msgpack::type_error(); }
++        if(o.via.ext.type() != -1) { throw msgpack::type_error(); }
++        std::chrono::high_resolution_clock::time_point tp;
++        switch(o.via.ext.size) {
++        case 4: {
++            uint32_t sec;
++            _msgpack_load32(uint32_t, o.via.ext.data(), &sec);
++            tp += std::chrono::seconds(sec);
++        } break;
++        case 8: {
++            uint64_t value;
++            _msgpack_load64(uint64_t, o.via.ext.data(), &value);
++            uint32_t nanosec = static_cast<uint32_t>(value >> 34);
++            uint64_t sec = value & 0x00000003ffffffffLL;
++            tp += std::chrono::duration_cast<std::chrono::high_resolution_clock::duration>(
++                std::chrono::nanoseconds(nanosec));
++            tp += std::chrono::seconds(sec);
++        } break;
++        case 12: {
++            uint32_t nanosec;
++            _msgpack_load32(uint32_t, o.via.ext.data(), &nanosec);
++            int64_t sec;
++            _msgpack_load64(int64_t, o.via.ext.data() + 4, &sec);
++            tp += std::chrono::duration_cast<std::chrono::high_resolution_clock::duration>(
++                std::chrono::nanoseconds(nanosec));
++            tp += std::chrono::seconds(sec);
++        } break;
++        default:
++            throw msgpack::type_error();
++        }
++        return tp;
++    }
++};
++
++template <>
++struct convert<
++    std::chrono::high_resolution_clock::time_point,
++    typename std::conditional<
++        !std::is_same<std::chrono::high_resolution_clock, std::chrono::system_clock>::value &&
++        !std::is_same<std::chrono::high_resolution_clock, std::chrono::steady_clock>::value,
++        void,
++        std::nullptr_t
++    >::type
++> {
++    msgpack::object const& operator()(msgpack::object const& o, std::chrono::high_resolution_clock::time_point& v) const {
++        if(o.type != msgpack::type::EXT) { throw msgpack::type_error(); }
++        if(o.via.ext.type() != -1) { throw msgpack::type_error(); }
++        std::chrono::high_resolution_clock::time_point tp;
++        switch(o.via.ext.size) {
++        case 4: {
++            uint32_t sec;
++            _msgpack_load32(uint32_t, o.via.ext.data(), &sec);
++            tp += std::chrono::seconds(sec);
++            v = tp;
++        } break;
++        case 8: {
++            uint64_t value;
++            _msgpack_load64(uint64_t, o.via.ext.data(), &value);
++            uint32_t nanosec = static_cast<uint32_t>(value >> 34);
++            uint64_t sec = value & 0x00000003ffffffffLL;
++            tp += std::chrono::duration_cast<std::chrono::high_resolution_clock::duration>(
++                std::chrono::nanoseconds(nanosec));
++            tp += std::chrono::seconds(sec);
++            v = tp;
++        } break;
++        case 12: {
++            uint32_t nanosec;
++            _msgpack_load32(uint32_t, o.via.ext.data(), &nanosec);
++            int64_t sec;
++            _msgpack_load64(int64_t, o.via.ext.data() + 4, &sec);
++            tp += std::chrono::duration_cast<std::chrono::high_resolution_clock::duration>(
++                std::chrono::nanoseconds(nanosec));
++            tp += std::chrono::seconds(sec);
++            v = tp;
++        } break;
++        default:
++            throw msgpack::type_error();
++        }
++        return o;
++    }
++};
++
++template <>
++struct pack<
++    std::chrono::high_resolution_clock::time_point,
++    typename std::conditional<
++        !std::is_same<std::chrono::high_resolution_clock, std::chrono::system_clock>::value &&
++        !std::is_same<std::chrono::high_resolution_clock, std::chrono::steady_clock>::value,
++        void,
++        std::nullptr_t
++    >::type
++> {
++    template <typename Stream>
++    msgpack::packer<Stream>& operator()(msgpack::packer<Stream>& o, const std::chrono::high_resolution_clock::time_point& v) const {
++        int64_t count = static_cast<int64_t>(v.time_since_epoch().count());
++
++        int64_t nano_num =
++            std::chrono::high_resolution_clock::duration::period::ratio::num *
++            (1000000000 / std::chrono::high_resolution_clock::duration::period::ratio::den);
++
++        int64_t nanosec = count % (1000000000 / nano_num) * nano_num;
++        int64_t sec = 0;
++        if (nanosec < 0) {
++            nanosec = 1000000000 + nanosec;
++            --sec;
++        }
++        sec += count
++            * std::chrono::high_resolution_clock::duration::period::ratio::num
++            / std::chrono::high_resolution_clock::duration::period::ratio::den;
++        if ((sec >> 34) == 0) {
++            uint64_t data64 = (static_cast<uint64_t>(nanosec) << 34) | static_cast<uint64_t>(sec);
++            if ((data64 & 0xffffffff00000000L) == 0) {
++                // timestamp 32
++                o.pack_ext(4, -1);
++                uint32_t data32 = static_cast<uint32_t>(data64);
++                char buf[4];
++                _msgpack_store32(buf, data32);
++                o.pack_ext_body(buf, 4);
++            }
++            else {
++                // timestamp 64
++                o.pack_ext(8, -1);
++                char buf[8];
++                _msgpack_store64(buf, data64);
++                o.pack_ext_body(buf, 8);
++            }
++        }
++        else {
++            // timestamp 96
++            o.pack_ext(12, -1);
++            char buf[12];
++            _msgpack_store32(&buf[0], static_cast<uint32_t>(nanosec));
++            _msgpack_store64(&buf[4], sec);
++            o.pack_ext_body(buf, 12);
++        }
++        return o;
++    }
++};
++
++template <>
++struct object_with_zone<
++    std::chrono::high_resolution_clock::time_point,
++    typename std::conditional<
++        !std::is_same<std::chrono::high_resolution_clock, std::chrono::system_clock>::value &&
++        !std::is_same<std::chrono::high_resolution_clock, std::chrono::steady_clock>::value,
++        void,
++        std::nullptr_t
++    >::type
++> {
++    void operator()(msgpack::object::with_zone& o, const std::chrono::high_resolution_clock::time_point& v) const {
++        int64_t count = static_cast<int64_t>(v.time_since_epoch().count());
++
++        int64_t nano_num =
++            std::chrono::high_resolution_clock::duration::period::ratio::num *
++            (1000000000 / std::chrono::high_resolution_clock::duration::period::ratio::den);
++
++        int64_t nanosec = count % (1000000000 / nano_num) * nano_num;
++        int64_t sec = 0;
++        if (nanosec < 0) {
++            nanosec = 1000000000 + nanosec;
++            --sec;
++        }
++        sec += count
++            * std::chrono::high_resolution_clock::duration::period::ratio::num
++            / std::chrono::high_resolution_clock::duration::period::ratio::den;
++        if ((sec >> 34) == 0) {
++            uint64_t data64 = (static_cast<uint64_t>(nanosec) << 34) | static_cast<uint64_t>(sec);
++            if ((data64 & 0xffffffff00000000L) == 0) {
++                // timestamp 32
++                o.type = msgpack::type::EXT;
++                o.via.ext.size = 4;
++                char* p = static_cast<char*>(o.zone.allocate_no_align(o.via.ext.size + 1));
++                p[0] = static_cast<char>(-1);
++                uint32_t data32 = static_cast<uint32_t>(data64);
++                _msgpack_store32(&p[1], data32);
++                o.via.ext.ptr = p;
++            }
++            else {
++                // timestamp 64
++                o.type = msgpack::type::EXT;
++                o.via.ext.size = 8;
++                char* p = static_cast<char*>(o.zone.allocate_no_align(o.via.ext.size + 1));
++                p[0] = static_cast<char>(-1);
++                _msgpack_store64(&p[1], data64);
++                o.via.ext.ptr = p;
++            }
++        }
++        else {
++            // timestamp 96
++            o.type = msgpack::type::EXT;
++            o.via.ext.size = 12;
++            char* p = static_cast<char*>(o.zone.allocate_no_align(o.via.ext.size + 1));
++            p[0] = static_cast<char>(-1);
++            _msgpack_store32(&p[1], static_cast<uint32_t>(nanosec));
++            _msgpack_store64(&p[1 + 4], sec);
++            o.via.ext.ptr = p;
++        }
++    }
++};
++
+ } // namespace adaptor
+ 
+ /// @cond
+--- msgpack-c-3.3.0.orig/test/msgpack_cpp11.cpp
++++ msgpack-c-3.3.0/test/msgpack_cpp11.cpp
+@@ -1053,6 +1053,385 @@ TEST(MSGPACK_CHRONO, system_clock_impl_n
+     EXPECT_EQ(val1, val3);
+ }
+ 
++
++TEST(MSGPACK_CHRONO, steady_clock)
++{
++    std::chrono::steady_clock::time_point val1;
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::steady_clock::time_point val2 = oh.get().as<std::chrono::steady_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::steady_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++TEST(MSGPACK_CHRONO, steady_clock_32)
++{
++    std::chrono::steady_clock::time_point val1(std::chrono::seconds(0x12345678L));
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++    char packed[] = {
++        static_cast<char>(0xd6u),
++        static_cast<char>(-1),
++        static_cast<char>(0x12),
++        static_cast<char>(0x34),
++        static_cast<char>(0x56),
++        static_cast<char>(0x78)
++    };
++    EXPECT_EQ(memcmp(sbuf.data(), packed, sizeof(packed)), 0);
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::steady_clock::time_point val2 = oh.get().as<std::chrono::steady_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::steady_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++TEST(MSGPACK_CHRONO, steady_clock_32_max)
++{
++    std::chrono::steady_clock::time_point val1(std::chrono::seconds(0xffffffffL));
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++    char packed[] = {
++        static_cast<char>(0xd6u),
++        static_cast<char>(-1),
++        static_cast<char>(0xffu),
++        static_cast<char>(0xffu),
++        static_cast<char>(0xffu),
++        static_cast<char>(0xffu)
++    };
++    EXPECT_EQ(memcmp(sbuf.data(), packed, sizeof(packed)), 0);
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::steady_clock::time_point val2 = oh.get().as<std::chrono::steady_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::steady_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++
++TEST(MSGPACK_CHRONO, steady_clock_64)
++{
++    std::chrono::steady_clock::time_point val1(std::chrono::seconds(0x31234567L));
++    val1 +=
++        std::chrono::duration_cast<std::chrono::steady_clock::duration>(
++            std::chrono::nanoseconds(0x312345678L)
++        );
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::steady_clock::time_point val2 = oh.get().as<std::chrono::steady_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::steady_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++TEST(MSGPACK_CHRONO, steady_clock_64_max)
++{
++    std::chrono::steady_clock::time_point val1(std::chrono::seconds(0xffffffffL));
++
++    val1 +=
++        std::chrono::duration_cast<std::chrono::steady_clock::duration>(
++            std::chrono::nanoseconds(0x3b9ac9ffL) // 999,999,999
++        );
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++    char packed_nano[] = {
++        static_cast<char>(0xd7u),
++        static_cast<char>(-1),
++        static_cast<char>(0xeeu), // 999,999,999 << 2
++        static_cast<char>(0x6b),
++        static_cast<char>(0x27),
++        static_cast<char>(0xfcu),
++        static_cast<char>(0xffu), // 32 bit sec
++        static_cast<char>(0xffu),
++        static_cast<char>(0xffu),
++        static_cast<char>(0xffu)
++    };
++    char packed_micro[] = {
++        static_cast<char>(0xd7u),
++        static_cast<char>(-1),
++        static_cast<char>(0xeeu), // 999,999,000 << 2
++        static_cast<char>(0x6b),
++        static_cast<char>(0x18),
++        static_cast<char>(0x60),
++        static_cast<char>(0xffu), // 32 bit sec
++        static_cast<char>(0xffu),
++        static_cast<char>(0xffu),
++        static_cast<char>(0xffu)
++    };
++    if (std::chrono::steady_clock::duration::period::ratio::den == 1000000000) {
++        EXPECT_EQ(memcmp(sbuf.data(), packed_nano, sizeof(packed_nano)), 0);
++    }
++    else if (std::chrono::steady_clock::duration::period::ratio::den == 1000000) {
++        EXPECT_EQ(memcmp(sbuf.data(), packed_micro, sizeof(packed_micro)), 0);
++    }
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::steady_clock::time_point val2 = oh.get().as<std::chrono::steady_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::steady_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++TEST(MSGPACK_CHRONO, steady_clock_impl_min)
++{
++    std::chrono::steady_clock::time_point val1(std::chrono::steady_clock::time_point::min());
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::steady_clock::time_point val2 = oh.get().as<std::chrono::steady_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::steady_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++TEST(MSGPACK_CHRONO, steady_clock_impl_max)
++{
++    std::chrono::steady_clock::time_point val1(std::chrono::steady_clock::time_point::max());
++
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::steady_clock::time_point val2 = oh.get().as<std::chrono::steady_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::steady_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++TEST(MSGPACK_CHRONO, steady_clock_impl_now)
++{
++    std::chrono::steady_clock::time_point val1(std::chrono::steady_clock::now());
++
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::steady_clock::time_point val2 = oh.get().as<std::chrono::steady_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::steady_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++
++TEST(MSGPACK_CHRONO, high_resolution_clock)
++{
++    std::chrono::high_resolution_clock::time_point val1;
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::high_resolution_clock::time_point val2 = oh.get().as<std::chrono::high_resolution_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::high_resolution_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++TEST(MSGPACK_CHRONO, high_resolution_clock_32)
++{
++    std::chrono::high_resolution_clock::time_point val1(std::chrono::seconds(0x12345678L));
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++    char packed[] = {
++        static_cast<char>(0xd6u),
++        static_cast<char>(-1),
++        static_cast<char>(0x12),
++        static_cast<char>(0x34),
++        static_cast<char>(0x56),
++        static_cast<char>(0x78)
++    };
++    EXPECT_EQ(memcmp(sbuf.data(), packed, sizeof(packed)), 0);
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::high_resolution_clock::time_point val2 = oh.get().as<std::chrono::high_resolution_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::high_resolution_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++TEST(MSGPACK_CHRONO, high_resolution_clock_32_max)
++{
++    std::chrono::high_resolution_clock::time_point val1(std::chrono::seconds(0xffffffffL));
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++    char packed[] = {
++        static_cast<char>(0xd6u),
++        static_cast<char>(-1),
++        static_cast<char>(0xffu),
++        static_cast<char>(0xffu),
++        static_cast<char>(0xffu),
++        static_cast<char>(0xffu)
++    };
++    EXPECT_EQ(memcmp(sbuf.data(), packed, sizeof(packed)), 0);
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::high_resolution_clock::time_point val2 = oh.get().as<std::chrono::high_resolution_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::high_resolution_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++
++TEST(MSGPACK_CHRONO, high_resolution_clock_64)
++{
++    std::chrono::high_resolution_clock::time_point val1(std::chrono::seconds(0x31234567L));
++    val1 +=
++        std::chrono::duration_cast<std::chrono::high_resolution_clock::duration>(
++            std::chrono::nanoseconds(0x312345678L)
++        );
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::high_resolution_clock::time_point val2 = oh.get().as<std::chrono::high_resolution_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::high_resolution_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++TEST(MSGPACK_CHRONO, high_resolution_clock_64_max)
++{
++    std::chrono::high_resolution_clock::time_point val1(std::chrono::seconds(0xffffffffL));
++
++    val1 +=
++        std::chrono::duration_cast<std::chrono::high_resolution_clock::duration>(
++            std::chrono::nanoseconds(0x3b9ac9ffL) // 999,999,999
++        );
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++    char packed_nano[] = {
++        static_cast<char>(0xd7u),
++        static_cast<char>(-1),
++        static_cast<char>(0xeeu), // 999,999,999 << 2
++        static_cast<char>(0x6b),
++        static_cast<char>(0x27),
++        static_cast<char>(0xfcu),
++        static_cast<char>(0xffu), // 32 bit sec
++        static_cast<char>(0xffu),
++        static_cast<char>(0xffu),
++        static_cast<char>(0xffu)
++    };
++    char packed_micro[] = {
++        static_cast<char>(0xd7u),
++        static_cast<char>(-1),
++        static_cast<char>(0xeeu), // 999,999,000 << 2
++        static_cast<char>(0x6b),
++        static_cast<char>(0x18),
++        static_cast<char>(0x60),
++        static_cast<char>(0xffu), // 32 bit sec
++        static_cast<char>(0xffu),
++        static_cast<char>(0xffu),
++        static_cast<char>(0xffu)
++    };
++    if (std::chrono::high_resolution_clock::duration::period::ratio::den == 1000000000) {
++        EXPECT_EQ(memcmp(sbuf.data(), packed_nano, sizeof(packed_nano)), 0);
++    }
++    else if (std::chrono::high_resolution_clock::duration::period::ratio::den == 1000000) {
++        EXPECT_EQ(memcmp(sbuf.data(), packed_micro, sizeof(packed_micro)), 0);
++    }
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::high_resolution_clock::time_point val2 = oh.get().as<std::chrono::high_resolution_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::high_resolution_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++TEST(MSGPACK_CHRONO, high_resolution_clock_impl_min)
++{
++    std::chrono::high_resolution_clock::time_point val1(std::chrono::high_resolution_clock::time_point::min());
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::high_resolution_clock::time_point val2 = oh.get().as<std::chrono::high_resolution_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::high_resolution_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++TEST(MSGPACK_CHRONO, high_resolution_clock_impl_max)
++{
++    std::chrono::high_resolution_clock::time_point val1(std::chrono::high_resolution_clock::time_point::max());
++
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::high_resolution_clock::time_point val2 = oh.get().as<std::chrono::high_resolution_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::high_resolution_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++TEST(MSGPACK_CHRONO, high_resolution_clock_impl_now)
++{
++    std::chrono::high_resolution_clock::time_point val1(std::chrono::high_resolution_clock::now());
++
++    msgpack::sbuffer sbuf;
++    msgpack::pack(sbuf, val1);
++
++    msgpack::object_handle oh =
++        msgpack::unpack(sbuf.data(), sbuf.size());
++    std::chrono::high_resolution_clock::time_point val2 = oh.get().as<std::chrono::high_resolution_clock::time_point>();
++    EXPECT_EQ(val1, val2);
++
++    std::chrono::high_resolution_clock::time_point val3;
++    oh.get().convert(val3);
++    EXPECT_EQ(val1, val3);
++}
++
++
+ TEST(MSGPACK_TIMESPEC, timespec_pack_convert_zero)
+ {
+     std::stringstream ss;

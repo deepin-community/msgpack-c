@@ -1,24 +1,12 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: msgpack-c
 Upstream-Contact: FURUHASHI Sadayuki
-Source: https://github.com/msgpack/msgpack-c
+Source: https://github.com/msgpack/msgpack-c branch c_master
 
 Files: *
 Copyright: 2008-2015 FURUHASHI Sadayuki
            2008-2019 KONDO Takatoshi
-           2015 MIZUKI Hirata
-           2005,2008-2017 Rene Rivera
-           2014 Franz Detro
-           2014 Microsoft Corporation
-           2014 Jessica Hamilton
-           2002-2011 Paul Mensonides
-           2011,2013-2014 Edward Diener
-           2001 Housemarque Oy
            2013 Vladimir Volodko
-           2018 Benjamin Worpitz
-           2017 James E. King III
-           2017 Ruslan Baratov
-           2016 Edward Diener
 License: Boost-1
 
 Files: debian/*

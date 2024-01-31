@@ -1,3 +1,6 @@
-version=3
+version=4
 
-https://github.com/msgpack/msgpack-c/releases/ (?:.*/)?msgpack-([0-9.]+)\.tar\.gz
+opts="\
+    downloadurlmangle=s#/tag/#/download/#;s#(c-@ANY_VERSION@)$#$1/@PACKAGE@-$2.tar.gz#, \
+    filenamemangle=s#c-@ANY_VERSION@#@PACKAGE@-$1.tar.gz#" \
+https://github.com/msgpack/msgpack-c/tags/ .*/releases/tag/c-@ANY_VERSION@

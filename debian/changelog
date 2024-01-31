@@ -1,3 +1,31 @@
+msgpack-c (4.0.0-3) unstable; urgency=medium
+
+  * Add -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=OFF to configure to fix Arch: all
+    FTBFS
+
+ -- James McCoy <jamessan@debian.org>  Wed, 04 Jan 2023 06:17:30 -0500
+
+msgpack-c (4.0.0-2) unstable; urgency=medium
+
+  * watch: Use GitHub's tags page to find the release tarball
+  * ci: Rename run_examples test to run-examples
+  * Add upstream/metadata file
+  * Update to debhelper-compat 13
+
+ -- James McCoy <jamessan@debian.org>  Mon, 02 Jan 2023 19:19:49 -0500
+
+msgpack-c (4.0.0-1) unstable; urgency=medium
+
+  * New upstream release
+    + Upstream has split the project into two separate upstream packages --
+      msgpack-c (this package) and msgpack-cxx.
+  * Move packaging repo to debian/msgpack-c
+  * Declare compliance with Policy 4.6.1, no changes needed
+  * Switch Build-Depends from googletest to libgtest-dev
+  * Add libmsgpack-cxx-dev Depends to libmsgpack-dev while packages migrate
+
+ -- James McCoy <jamessan@debian.org>  Tue, 26 Jul 2022 06:54:30 -0400
+
 msgpack-c (3.3.0-4) unstable; urgency=medium
 
   * Add libboost-dev to libmsgpack-dev Depends (Ref #965301)

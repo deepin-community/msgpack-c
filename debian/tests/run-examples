@@ -1,0 +1,30 @@
+#!/bin/sh
+set -e
+
+SRCDIR=$(pwd)
+
+cd "$AUTOPKGTEST_TMP"
+
+[ -d example ] || cp -r "$SRCDIR"/example .
+
+cat > CMakeLists.txt <<EOF
+cmake_minimum_required(VERSION 3.0)
+project(msgpack_autopkgtests)
+find_package(msgpack REQUIRED CONFIG)
+find_package(Threads)
+add_subdirectory(example)
+EOF
+
+export CFLAGS
+
+DIR="$AUTOPKGTEST_TMP/c"
+mkdir -p "$DIR"
+trap "rm -r '$DIR'" EXIT
+cd "$DIR"
+
+cmake -Wno-dev $CMAKE_ARGS ..
+cmake --build .
+for example_bin in $(find example -type f -perm /a+x); do
+  echo "Testing example '$(basename "$example_bin")'"
+  ./"$example_bin"
+done
